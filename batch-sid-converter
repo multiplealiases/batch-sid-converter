@@ -28,6 +28,8 @@ function sidtowav() {
 
     >&/dev/null pushd "$tmp"
     # hard-coding mono-only output, should make that an option later
+    # hack: sidplayfp doesn't like running in parallel, so
+    # I had to fake a tty for it.
     >&/dev/null faketty sidplayfp "$sidabs" -m -w
     >&/dev/null popd
     # oops, I relied on relative paths
@@ -148,6 +150,16 @@ find "$hvsc" -type f -name '*.sid' -print0 | cut -z -f 2- -d / | sed -z 's/\.[^.
 find "$wavs" -type f -name '*.'"$extension" -print0 | cut -z -f 2- -d / | sed -z 's/\.[^.]*$//' | cut -z -f 1 -d '[' | sort -z | uniq -z > "$wavslist"
 
 comm -z -23 "$hvsclist" "$wavslist" | sed -ze "s#^#$hvsc/#g" -e 's#$#.sid#g' > "$unencodedlist"
+unencodedcount=$(tr '\0' '\n' < "$unencodedlist" | wc --lines)
+totalcount=$(tr '\0' '\n' < "$hvsclist" | wc --lines)
+if [[ $((totalcount - unencodedcount)) -ne 0 ]]
+then
+    cat << EOF
+Resuming: $unencodedcount SIDs to go.
+Be warned that new HVSC versions may replace SIDs,
+which this script cannot detect!
+EOF
+fi
 
 export bitrate codec extension strip tmpwavs tmpintermediate hvsc wavs
 parallel --progress -0 -j"$jobs" sidtowav {} :::: "$unencodedlist"
