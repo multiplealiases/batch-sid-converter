@@ -3,7 +3,7 @@ set -o nounset
 set -o errexit
 
 function cleanup() {
-    rm -r "$tmpwavs" "$tmpintermediate"
+    rm -r "$tmpwavs" "$tmpintermediate" "$hvsclist" "$wavslist" "$unencodedlist"
 }
 
 function usage() {
@@ -26,17 +26,16 @@ function sidtowav() {
     siddir="$(echo "$1" | rev | cut -f 2- -d / | rev)"
     targetdir="$(echo "$siddir" | cut -d / -f 2- )"
 
-    pushd "$tmp"
+    >&/dev/null pushd "$tmp"
     # hard-coding mono-only output, should make that an option later
     >&/dev/null faketty sidplayfp "$sidabs" -m -w
-    popd
+    >&/dev/null popd
     # oops, I relied on relative paths
-    pushd "$wavs"
+    >&/dev/null pushd "$wavs"
     # sids can have subtunes.
-    parallel -j1 ffmpeg -loglevel quiet -ss 2 -i {} -c:a "$codec" -b:a "$bitrate" -ac 2 "$w"/{/.}."$extension" :::: <(find "$tmp" -type f -name '*.wav')
+    >&/dev/null parallel -j1 ffmpeg -loglevel quiet -ss 2 -i {} -c:a "$codec" -b:a "$bitrate" -ac 2 "$w"/{/.}."$extension" :::: <(find "$tmp" -type f -name '*.wav')
     # for atomicity reasons, create the output files first in
     # a directory within the output dir, then mv them into place.
-    echo "the current dir is $PWD"
     mv "$w"/* ./"$targetdir"/
     rm -r "$tmp" "$w"
 }
@@ -118,7 +117,6 @@ do
     --)
         set +o nounset
             valid_dir "$2"
-            valid_noclobber "$3"
         set -o nounset
         hvsc="$2"
         wavs="$3"
@@ -135,6 +133,9 @@ strip="${strip:-1}"
 mkdir -p "$wavs"
 tmpwavs=$(mktemp -d)
 tmpintermediate=$(mktemp -d -p "$wavs")
+hvsclist=$(mktemp)
+wavslist=$(mktemp)
+unencodedlist=$(mktemp)
 
 trap 'cleanup' ERR EXIT
 
@@ -143,5 +144,10 @@ cut -zd / -f $((1 + strip))- | \
 xargs -I{} -0 printf '%s/%s\0' "$wavs" {} | \
 xargs -0 -I{} mkdir -p {}
 
+find "$hvsc" -type f -name '*.sid' -print0 | cut -z -f 2- -d / | sed -z 's/\.[^.]*$//' | sort -z > "$hvsclist"
+find "$wavs" -type f -name '*.'"$extension" -print0 | cut -z -f 2- -d / | sed -z 's/\.[^.]*$//' | cut -z -f 1 -d '[' | sort -z | uniq -z > "$wavslist"
+
+comm -z -23 "$hvsclist" "$wavslist" | sed -z 's/^/C64Music\//g ; s/$/\.sid/g' > "$unencodedlist"
+
 export bitrate codec extension strip tmpwavs tmpintermediate hvsc wavs
-parallel --progress -0 -j"$jobs" sidtowav {} :::: <(find "$hvsc" -type f -name '*.sid' -print0)
+parallel --progress -0 -j"$jobs" sidtowav {} :::: "$unencodedlist"
