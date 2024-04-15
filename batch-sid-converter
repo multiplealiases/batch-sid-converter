@@ -3,7 +3,7 @@ set -o nounset
 set -o errexit
 
 function cleanup() {
-    rm "$tmpwavs"
+    rm -r "$tmpwavs" "$tmpintermediate"
 }
 
 function usage() {
@@ -21,18 +21,24 @@ function sidtowav() {
     set +o errexit
     set -o nounset
     tmp=$(mktemp -d -p "$tmpwavs")
+    w=$(realpath "$(mktemp -d -p "$tmpintermediate")")
     sidabs="$(realpath "$1")"
     siddir="$(echo "$1" | rev | cut -f 2- -d / | rev)"
-    targetdir="$(echo "$siddir" | cut -d / -f 2-)"
-    >&/dev/null pushd "$tmp"
+    targetdir="$(echo "$siddir" | cut -d / -f 2- )"
+
+    pushd "$tmp"
     # hard-coding mono-only output, should make that an option later
     >&/dev/null faketty sidplayfp "$sidabs" -m -w
-    >&/dev/null popd
+    popd
     # oops, I relied on relative paths
-    >& pushd "$wavs"
+    pushd "$wavs"
     # sids can have subtunes.
-    parallel -j1 ffmpeg -loglevel quiet -ss 2 -i {} -c:a "$codec" -b:a "$bitrate" -ac 2 ./"$targetdir"/{/.}."$extension" :::: <(find "$tmp" -type f -name '*.wav')
-    rm -r "$tmp"
+    parallel -j1 ffmpeg -loglevel quiet -ss 2 -i {} -c:a "$codec" -b:a "$bitrate" -ac 2 "$w"/{/.}."$extension" :::: <(find "$tmp" -type f -name '*.wav')
+    # for atomicity reasons, create the output files first in
+    # a directory within the output dir, then mv them into place.
+    echo "the current dir is $PWD"
+    mv "$w"/* ./"$targetdir"/
+    rm -r "$tmp" "$w"
 }
 export -f sidtowav
 
@@ -126,7 +132,9 @@ jobs="${jobs:-$(nproc)}"
 extension="${extension:-ogg}"
 strip="${strip:-1}"
 
+mkdir -p "$wavs"
 tmpwavs=$(mktemp -d)
+tmpintermediate=$(mktemp -d -p "$wavs")
 
 trap 'cleanup' ERR EXIT
 
@@ -135,5 +143,5 @@ cut -zd / -f $((1 + strip))- | \
 xargs -I{} -0 printf '%s/%s\0' "$wavs" {} | \
 xargs -0 -I{} mkdir -p {}
 
-export bitrate codec extension strip tmpwavs hvsc wavs
+export bitrate codec extension strip tmpwavs tmpintermediate hvsc wavs
 parallel --progress -0 -j"$jobs" sidtowav {} :::: <(find "$hvsc" -type f -name '*.sid' -print0)
