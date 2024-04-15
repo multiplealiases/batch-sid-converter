@@ -35,7 +35,7 @@ function sidtowav() {
     # oops, I relied on relative paths
     >&/dev/null pushd "$wavs"
     # sids can have subtunes.
-    >&/dev/null parallel -j1 ffmpeg -loglevel quiet -ss 2 -i {} -c:a "$codec" -b:a "$bitrate" -ac 2 "$w"/{/.}."$extension" :::: <(find "$tmp" -type f -name '*.wav')
+    >&/dev/null parallel -j1 ffmpeg -loglevel quiet -ss 2 -i {} -c:a "$codec" -b:a "$bitrate" "$w"/{/.}."$extension" :::: <(find "$tmp" -type f -name '*.wav')
     # for atomicity reasons, create the output files first in
     # a directory within the output dir, then mv them into place.
     mv "$w"/* ./"$targetdir"/
