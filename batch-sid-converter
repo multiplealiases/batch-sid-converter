@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+set -o nounset
+set -o errexit
+
+function cleanup() {
+    rm "$tmpwavs"
+}
+
+function usage() {
+    cat << EOF
+
+EOF
+}
+
+function faketty () {
+    script -qefc "$(printf "%q " "$@")" /dev/null
+}
+export -f faketty
+
+function sidtowav() {
+    set +o errexit
+    set -o nounset
+    tmp=$(mktemp -d -p "$tmpwavs")
+    sidabs="$(realpath "$1")"
+    siddir="$(echo "$1" | rev | cut -f 2- -d / | rev)"
+    targetdir="$(echo "$siddir" | cut -d / -f 2-)"
+    >&/dev/null pushd "$tmp"
+    # hard-coding mono-only output, should make that an option later
+    >&/dev/null faketty sidplayfp "$sidabs" -m -w
+    >&/dev/null popd
+    # oops, I relied on relative paths
+    >& pushd "$wavs"
+    # sids can have subtunes.
+    parallel -j1 ffmpeg -loglevel quiet -ss 2 -i {} -c:a "$codec" -b:a "$bitrate" -ac 2 ./"$targetdir"/{/.}."$extension" :::: <(find "$tmp" -type f -name '*.wav')
+    rm -r "$tmp"
+}
+export -f sidtowav
+
+function valid_dir() {
+    if [[ -z "$1" ]]
+    then
+        usage
+        exit 4
+    elif [[ $# -gt 1 ]]
+    then
+        cat << EOF
+Edge case: How did more than one arg get into valid_dir?
+I saw: $@
+EOF
+        exit 5
+    elif [[ ! -d "$1" ]]
+    then
+        printf "'%s': is not directory\n" "$1"
+        exit 3
+    elif [[ ! -e "$1" ]]
+    then
+        printf "'%s': directory does not exist\n" "$1"
+        exit 2
+    fi
+}
+
+function valid_noclobber() {
+    if [[ -z "$1" ]]
+    then
+        echo 'A second argument (output directory) is needed.'
+        exit 6
+    elif [[ $# -gt 1 ]]
+    then
+        cat << EOF
+Edge case: How did more than one arg get into valid_noclobber?
+I saw: $@
+EOF
+        exit 7
+    elif [[ -e "$1" ]]
+    then
+        printf "'%s': file exists\n" "$1"
+        printf "Please move or delete '%s'\n" "$1"
+        exit 8
+    fi
+}
+
+
+ARGS="$(getopt --options h,c:,b:,e:,j:,p: --long help,bitrate:,codec:,extension:,jobs:,strip: -- "$@")"
+eval set -- "$ARGS"
+while true
+do
+    case "$1" in
+    -h | --help)
+        help_text
+        exit 1
+        ;;
+    -c | --codec)
+        codec="$2"
+        shift 2
+        ;;
+    -b | --bitrate)
+        bitrate="$2"
+        shift 2
+        ;;
+    -e | --extension)
+        extension="$2"
+        shift 2
+        ;;
+    -j | --jobs)
+        jobs="$2"
+        shift 2
+        ;;
+    -p | --strip)
+        strip="$2"
+        shift 2
+        ;;
+    --)
+        set +o nounset
+            valid_dir "$2"
+            valid_noclobber "$3"
+        set -o nounset
+        hvsc="$2"
+        wavs="$3"
+        break
+        ;;
+    esac
+done
+bitrate="${bitrate:-160k}"
+codec="${codec:-libopus}"
+jobs="${jobs:-$(nproc)}"
+extension="${extension:-ogg}"
+strip="${strip:-1}"
+
+tmpwavs=$(mktemp -d)
+
+trap 'cleanup' ERR EXIT
+
+find "$hvsc" -type d -print0 | \
+cut -zd / -f $((1 + strip))- | \
+xargs -I{} -0 printf '%s/%s\0' "$wavs" {} | \
+xargs -0 -I{} mkdir -p {}
+
+export bitrate codec extension strip tmpwavs hvsc wavs
+parallel --progress -0 -j"$jobs" sidtowav {} :::: <(find "$hvsc" -type f -name '*.sid' -print0)
