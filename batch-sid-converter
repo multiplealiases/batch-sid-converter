@@ -35,7 +35,9 @@ function sidtowav() {
     # oops, I relied on relative paths
     >&/dev/null pushd "$wavs"
     # sids can have subtunes.
-    >&/dev/null parallel -j1 ffmpeg -loglevel quiet -ss 2 -i {} -c:a "$codec" -b:a "$bitrate" "$w"/{/.}."$extension" :::: <(find "$tmp" -type f -name '*.wav')
+    # trying to handle odd behavior in sidplayfp where WAVs it
+    # produces might have 2-ish seconds of silence on some tunes.
+    >&/dev/null parallel -j1 ffmpeg -loglevel quiet -i {}  -af silenceremove=1:0:0 -c:a "$codec" -b:a "$bitrate" "$w"/{/.}."$extension" :::: <(find "$tmp" -type f -name '*.wav')
     # for atomicity reasons, create the output files first in
     # a directory within the output dir, then mv them into place.
     mv "$w"/* ./"$targetdir"/
