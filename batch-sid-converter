@@ -38,8 +38,10 @@ function sidtowav() {
     # trying to handle odd behavior in sidplayfp where WAVs it
     # produces might have 2-ish seconds of silence on some tunes.
     >&/dev/null parallel -j1 ffmpeg -loglevel quiet -i {}  -af silenceremove=1:0:0 -c:a "$codec" -b:a "$bitrate" "$w"/{/.}."$extension" :::: <(find "$tmp" -type f -name '*.wav')
-    # for atomicity reasons, create the output files first in
+    # for atomicity, create the output files first in
     # a directory within the output dir, then mv them into place.
+    # mv is not atomic between different filesystems,
+    # and my /tmp is a tmpfs.
     mv "$w"/* ./"$targetdir"/
     rm -r "$tmp" "$w"
 }
