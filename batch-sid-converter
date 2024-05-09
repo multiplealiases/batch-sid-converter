@@ -6,9 +6,26 @@ function cleanup() {
     rm -r "$tmpwavs" "$tmpintermediate" "$hvsclist" "$wavslist" "$unencodedlist"
 }
 
-function usage() {
-    cat << EOF
+function banner() {
+    echo Batch-converts SID files to a playable format using sidplayfp
+}
 
+function usage() {
+    echo Usage: batch-sid-converter \[options\] \<input directory\> \<output directory\>
+}
+
+function help_text(){
+    cat << EOF
+$(banner)
+$(usage)
+
+Defaults shown in [].
+-b, --bitrate        bitrate to convert to [160k]
+-c, --codec          codec to convert to [libopus]
+-e, --extension      file extension [ogg]
+-j, --jobs           number of parallel processes [$(nproc)]
+-p, --strip          path components to strip from the input [1]
+-h, --help           this help
 EOF
 }
 
