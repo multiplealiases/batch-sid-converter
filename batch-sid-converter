@@ -2,6 +2,21 @@
 set -o nounset
 set -o errexit
 
+prog_requires=( sidplayfp parallel ffmpeg script )
+prog_absent=()
+for p in "${prog_requires[@]}"
+do
+    &>/dev/null type -p "$p" || prog_absent+=( "$p" )
+done
+
+if [[ ${#prog_absent[@]} -gt 0 ]]
+then
+    cat << EOF
+Missing programs: ${prog_absent[@]}
+EOF
+exit 1
+fi
+
 function cleanup() {
     rm -r "$tmpwavs" "$tmpintermediate" "$hvsclist" "$wavslist" "$unencodedlist"
 }
