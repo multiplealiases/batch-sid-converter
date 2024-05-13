@@ -2,6 +2,9 @@
 set -o nounset
 set -o errexit
 
+# This script expects Bash + GNU coreutils.
+# Any so-called "GNU/Linux" distro should satisfy this requirement;
+# other environments (non-GNU Linux, BSD) may require further finagling.
 prog_requires=( sidplayfp parallel ffmpeg script )
 prog_absent=()
 for p in "${prog_requires[@]}"
