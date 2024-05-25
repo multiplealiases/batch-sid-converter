@@ -43,6 +43,7 @@ Defaults shown in [].
 -e, --extension      file extension [ogg]
 -j, --jobs           number of parallel processes [$(nproc)]
 -p, --strip          path components to strip from the input [1]
+-r, --rate           sample rate [48000]
 -h, --help           this help
 EOF
 }
@@ -65,14 +66,20 @@ function sidtowav() {
     # hard-coding mono-only output, should make that an option later
     # hack: sidplayfp doesn't like running in parallel, so
     # I had to fake a tty for it.
-    >&/dev/null faketty sidplayfp "$sidabs" -m -w
+
+    # These settings are overkill.
+    # May as well start from the highest-quality source.
+    >&/dev/null faketty sidplayfp "$sidabs" -m -p32 -f192000 -w
     >&/dev/null popd
     # oops, I relied on relative paths
     >&/dev/null pushd "$wavs"
     # sids can have subtunes.
     # trying to handle odd behavior in sidplayfp where WAVs it
     # produces might have 2-ish seconds of silence on some tunes.
-    >&/dev/null parallel -j1 ffmpeg -loglevel quiet -i {}  -af silenceremove=1:0:0 -c:a "$codec" -b:a "$bitrate" "$w"/{/.}."$extension" :::: <(find "$tmp" -type f -name '*.wav')
+    >&/dev/null parallel -j1 ffmpeg -loglevel quiet -i {} \
+    -af silenceremove=1:0:0 -c:a "$codec" -b:a "$bitrate" \
+    -resampler soxr -precision 33 -dither_method f_weighted -ar "$sample_rate" \
+    "$w"/{/.}."$extension" :::: <(find "$tmp" -type f -name '*.wav')
     # for atomicity, create the output files first in
     # a directory within the output dir, then mv them into place.
     # mv is not atomic between different filesystems,
@@ -126,7 +133,7 @@ EOF
 }
 
 
-ARGS="$(getopt --options h,c:,b:,e:,j:,p: --long help,bitrate:,codec:,extension:,jobs:,strip: -- "$@")"
+ARGS="$(getopt --options h,c:,b:,e:,j:,p:,r: --long help,bitrate:,codec:,extension:,jobs:,strip:,rate: -- "$@")"
 eval set -- "$ARGS"
 while true
 do
@@ -155,6 +162,10 @@ do
         strip="$2"
         shift 2
         ;;
+    -r | --rate)
+        sample_rate="$2"
+        shift 2
+        ;;
     --)
         set +o nounset
             valid_dir "$2"
@@ -170,6 +181,7 @@ codec="${codec:-libopus}"
 jobs="${jobs:-$(nproc)}"
 extension="${extension:-ogg}"
 strip="${strip:-1}"
+sample_rate="${sample_rate:-48000}"
 
 mkdir -p "$wavs"
 tmpwavs=$(mktemp -d)
@@ -200,5 +212,5 @@ which this script cannot detect!
 EOF
 fi
 
-export bitrate codec extension strip tmpwavs tmpintermediate hvsc wavs
+export bitrate codec extension strip tmpwavs tmpintermediate hvsc wavs sample_rate
 parallel --progress -0 -j"$jobs" sidtowav {} :::: "$unencodedlist"
