@@ -21,7 +21,7 @@ exit 1
 fi
 
 function cleanup() {
-    rm -r "$tmpwavs" "$tmpintermediate" "$hvsclist" "$wavslist" "$unencodedlist"
+    rm -r "$tmpwavs" "$tmpintermediate" "$hvsclist" "$wavslist" "$unencodedlist" "$extra_args_f"
 }
 
 function banner() {
@@ -45,6 +45,7 @@ Defaults shown in [].
 -p, --strip          path components to strip from the input [1]
 -r, --rate           sample rate [48000]
 -h, --help           this help
+--16-bit             (FLAC and ALAC only) use 16-bit format
 EOF
 }
 
@@ -62,6 +63,10 @@ function sidtowav() {
     siddir="$(echo "$1" | rev | cut -f 2- -d / | rev)"
     targetdir="$(echo "$siddir" | cut -d / -f 2- )"
 
+    # Horrible horrible horrible.
+    # Parallel can't carry arrays, so create a temp file and
+    # readarray it *inside* Parallel.
+    readarray -t extra_args < "$extra_args_f"
     >&/dev/null pushd "$tmp"
     # hard-coding mono-only output, should make that an option later
     # hack: sidplayfp doesn't like running in parallel, so
@@ -77,7 +82,7 @@ function sidtowav() {
     # trying to handle odd behavior in sidplayfp where WAVs it
     # produces might have 2-ish seconds of silence on some tunes.
     >&/dev/null parallel -j1 ffmpeg -loglevel quiet -i {} \
-    -af silenceremove=1:0:0 -c:a "$codec" -b:a "$bitrate" \
+    -af silenceremove=1:0:0 "${extra_args[@]}" -c:a "$codec" -b:a "$bitrate" \
     -resampler soxr -precision 33 -dither_method f_weighted -ar "$sample_rate" \
     "$w"/{/.}."$extension" :::: <(find "$tmp" -type f -name '*.wav')
     # for atomicity, create the output files first in
@@ -133,7 +138,7 @@ EOF
 }
 
 
-ARGS="$(getopt --options h,c:,b:,e:,j:,p:,r: --long help,bitrate:,codec:,extension:,jobs:,strip:,rate: -- "$@")"
+ARGS="$(getopt --options h,c:,b:,e:,j:,p:,r: --long help,bitrate:,codec:,extension:,jobs:,strip:,rate:,16-bit -- "$@")"
 eval set -- "$ARGS"
 while true
 do
@@ -166,6 +171,10 @@ do
         sample_rate="$2"
         shift 2
         ;;
+    --16-bit)
+        sixteen_bit="y"
+        shift
+        ;;
     --)
         set +o nounset
             valid_dir "$2"
@@ -182,6 +191,23 @@ jobs="${jobs:-$(nproc)}"
 extension="${extension:-ogg}"
 strip="${strip:-1}"
 sample_rate="${sample_rate:-48000}"
+sixteen_bit="${sixteen_bit:-n}"
+# Hack: parallel cannot carry arrays, so
+# put the args in a file instead.
+extra_args_f=$(mktemp)
+
+if [[ $sixteen_bit == "y" ]]
+then
+    if [[ ! ( $codec == flac || $codec == alac ) ]]
+    then
+        echo '--16-bit is only compatible with flac and alac codecs.'
+        exit 1
+    fi
+    cat << EOF >> "$extra_args_f"
+-sample_fmt
+s16
+EOF
+fi
 
 mkdir -p "$wavs"
 tmpwavs=$(mktemp -d)
@@ -212,5 +238,5 @@ which this script cannot detect!
 EOF
 fi
 
-export bitrate codec extension strip tmpwavs tmpintermediate hvsc wavs sample_rate
+export bitrate codec extension strip tmpwavs tmpintermediate hvsc wavs sample_rate extra_args_f
 parallel --progress -0 -j"$jobs" sidtowav {} :::: "$unencodedlist"
