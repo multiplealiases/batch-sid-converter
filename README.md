@@ -14,7 +14,7 @@ A Bash script to batch-convert a collection of SID files (such as the
 
 * Is a massive pile of hacks
 
-## tmp-on-tmpfs users
+## `-E`/`--extreme` and tmp-on-tmpfs
 
 Your tmpfs will have to be pretty big depending on how many jobs
 you're runnning, about 32 GB for 16 jobs. Remount `/tmp`:
@@ -37,6 +37,12 @@ To convert to 44.1 kHz 16-bit FLAC:
 
 ```console
 $ batch-sid-converter -c flac -e flac -r 44100 --16-bit C64Music flacs
+```
+
+To convert to 96 kHz 24-bit FLAC:
+
+```console
+$ batch-sid-converter -c flac -e flac -E -r 96000 C64Music waste-of-disk-space
 ```
 
 ## How long will it take?
