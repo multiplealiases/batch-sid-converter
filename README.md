@@ -14,6 +14,17 @@ A Bash script to batch-convert a collection of SID files (such as the
 
 * Is a massive pile of hacks
 
+## tmp-on-tmpfs users
+
+Your tmpfs will have to be pretty big depending on how many jobs
+you're runnning, about 32 GB for 16 jobs. Remount `/tmp`:
+
+```console
+# mount -o remount,size=32G /tmp
+```
+
+and consider using zram swap.
+
 ## Examples
 
 To convert the HVSC to 128 kbit/s 44.1 kHz MP3s:
