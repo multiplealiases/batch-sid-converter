@@ -60,9 +60,8 @@ function sidtowav() {
     set -o nounset
     tmp=$(mktemp -d -p "$tmpwavs")
     w=$(realpath "$(mktemp -d -p "$tmpintermediate")")
-    sidabs="$(realpath "$1")"
     siddir="$(echo "$1" | rev | cut -f 2- -d / | rev)"
-    targetdir="$(echo "$siddir" | cut -d / -f 2- )"
+    targetdir="$(echo "$siddir" | cut -d / -f $((strip + 1))- )"
 
     # Horrible horrible horrible.
     # Parallel can't carry arrays, so create a temp file and
@@ -76,7 +75,7 @@ function sidtowav() {
 
     # These settings are overkill.
     # May as well start from the highest-quality source.
-    >&/dev/null faketty sidplayfp "$sidabs" -m "${extra_args_sidplayfp[@]}" -w
+    >&/dev/null faketty sidplayfp "$1" -m "${extra_args_sidplayfp[@]}" -w
     >&/dev/null popd
     # oops, I relied on relative paths
     >&/dev/null pushd "$wavs"
@@ -196,6 +195,7 @@ codec="${codec:-libopus}"
 jobs="${jobs:-$(nproc)}"
 extension="${extension:-ogg}"
 strip="${strip:-1}"
+wavstrip="${wavstrip:-1}"
 sample_rate="${sample_rate:-48000}"
 sixteen_bit="${sixteen_bit:-n}"
 extreme="${extreme:-n}"
@@ -239,9 +239,9 @@ xargs -I{} -0 printf '%s/%s\0' "$wavs" {} | \
 xargs -0 -I{} mkdir -p {}
 
 find "$hvsc" -type f -name '*.sid' -print0 | cut -z -f $((1 + strip))- -d / | sed -z 's/\.[^.]*$//' | sort -z > "$hvsclist"
-find "$wavs" -type f -name '*.'"$extension" -print0 | cut -z -f $((1 + strip))- -d / | sed -z 's/\.[^.]*$//' | cut -z -f 1 -d '[' | sort -z | uniq -z > "$wavslist"
+find "$wavs" -type f -name '*.'"$extension" -print0 | sed "s#^$wavs##" | sed -z 's/\.[^.]*$//' | cut -z -f 1 -d '[' | sort -z | uniq -z > "$wavslist"
 
-comm -z -23 "$hvsclist" "$wavslist" | sed -ze "s#^#$hvsc/#g" -e 's#$#.sid#g' > "$unencodedlist"
+comm -z -23 "$hvsclist" "$wavslist" | sed -ze "s#^#$hvsc/#g" -e 's#$#.sid#g' | xargs -0 realpath -ze > "$unencodedlist"
 unencodedcount=$(tr '\0' '\n' < "$unencodedlist" | wc --lines)
 totalcount=$(tr '\0' '\n' < "$hvsclist" | wc --lines)
 if [[ $((totalcount - unencodedcount)) -ne 0 ]]
