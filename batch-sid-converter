@@ -270,8 +270,8 @@ do
         set +o nounset
             valid_dir "$2"
         set -o nounset
-        hvsc="$2"
-        wavs="$3"
+        hvsc="$(realpath "$2")"
+        wavs="$(realpath "$3")"
         break
         ;;
     esac
@@ -326,7 +326,7 @@ xargs -I{} -0 printf '%s/%s\0' "$wavs" {} | \
 xargs -0 -I{} mkdir -p {}
 
 find "$hvsc" -type f -name '*.sid' -print0 | cut -z -f $((1 + strip))- -d / | sed -z 's/\.[^.]*$//' | sort -z > "$hvsclist"
-find "$wavs" -type f -name '*.'"$extension" -print0 | sed "s#^$wavs##" | sed -z 's/\.[^.]*$//' | cut -z -f 1 -d '[' | sort -z | uniq -z > "$wavslist"
+find "$wavs" -type f -name '*.'"$extension" -print0 | sed "s#^$wavs/##" | sed -z 's/\.[^.]*$//' | cut -z -f 1 -d '[' | sort -z | uniq -z > "$wavslist"
 
 comm -z -23 "$hvsclist" "$wavslist" | sed -ze "s#^#$hvsc/#g" -e 's#$#.sid#g' | xargs -0 realpath -ze > "$unencodedlist"
 unencodedcount=$(tr '\0' '\n' < "$unencodedlist" | wc --lines)
