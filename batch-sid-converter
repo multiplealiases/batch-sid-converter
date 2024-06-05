@@ -55,6 +55,88 @@ function faketty () {
 }
 export -f faketty
 
+function eprintf() {
+    # This is just printf.
+    # shellcheck disable=SC2059
+    >&2 printf "$@"
+}
+export -f eprintf
+
+function die() {
+    eprintf "$@"
+    exit 1
+}
+export -f die
+
+function sidsize() {
+    sid="$1"
+    songlengths="$2"
+    if [[ $extreme == 'y' ]]
+    then
+        # This figure is in decimal kilobytes per second.
+        # Adding 1 for good luck.
+        bitrate=769
+    else
+        # Close enough.
+        bitrate=89
+    fi
+    sidhash=$(md5sum "$sid" | cut -d ' ' -f 1)
+    minutes="$(grep "^$sidhash" "$songlengths" | cut -f 2 -d '=' | tr ' ' '\n' | cut -f 1 -d : | paste -sd+ | tr -d '\r' | bc)"
+    seconds="$(grep "^$sidhash" "$songlengths" | cut -f 2 -d '=' | tr ' ' '\n' | cut -f 2 -d : | paste -sd+ | tr -d '\r' | bc | cut -f 1 -d '.')"
+    duration="$(( minutes * 60 + seconds ))"
+    size="$(( duration * bitrate ))"
+    printf '%s\n' "$size"
+}
+export -f sidsize
+
+function polltmp() {
+    sid="$1"
+    tmp="$2"
+    sidsize="$(sidsize "$sid" "$songlengths")"
+    while [[ $(( $(df --block-size=1000 "$tmp" --output=avail | tail -n1) * 6 / 10 )) -lt $sidsize ]]
+    do
+        # jitter the sleep time
+        random=$(shuf -en1 $(seq 30 1 60))
+        eprintf "%s: sleeping for %s\n" "$$" "$random"
+        sleep "$random"
+
+    done
+}
+export -f polltmp
+
+function guess() {
+    while [[ $# != 0 ]]
+    do
+        if [[ -f $1 ]]
+        then
+            printf '%s\n' "$1"
+            return
+        fi
+        shift
+    done
+    return 1
+}
+
+function findsonglengths() {
+    if [[ ! -f $HOME/.config/sidplayfp/sidplayfp.ini ]]
+    then
+        # The .txt format is N/A: it's old and HVSC doesn't ship it anymore.
+        guess "$HOME/.local/share/sidplayfp/Songlengths.md5" \
+              "/usr/share/sidplayfp/Songlengths.md5" || die "Can't find Songlength db."
+    else
+        sl="$(grep '^Songlength Database' ~/.config/sidplayfp/sidplayfp.ini | cut -d '=' -f 2 | sed -e 's/^[[:space:]]*//')"
+        if [[ ${sl##*.} == 'txt' ]]
+        then
+            die 'The .txt Songlength database format is unsupported. Please switch to the .md5 format.\n'
+        elif [[ -z $sl ]]
+        then
+        guess "$HOME/.local/share/sidplayfp/Songlengths.md5" \
+              "/usr/share/sidplayfp/Songlengths.md5" || die "Can't find Songlength db."
+        fi
+        printf '%s\n' "$sl"
+    fi
+}
+
 function sidtowav() {
     set +o errexit
     set -o nounset
@@ -69,6 +151,10 @@ function sidtowav() {
     readarray -t extra_args < "$extra_args_f"
     readarray -t extra_args_sidplayfp < "$extra_args_sidplayfp_f"
     >&/dev/null pushd "$tmp"
+
+    # Wait if there's not enough space in $tmp.
+    polltmp "$1" "$tmp"
+
     # hard-coding mono-only output, should make that an option later
     # hack: sidplayfp doesn't like running in parallel, so
     # I had to fake a tty for it.
@@ -230,6 +316,7 @@ tmpintermediate=$(mktemp -d -p "$wavs")
 hvsclist=$(mktemp)
 wavslist=$(mktemp)
 unencodedlist=$(mktemp)
+songlengths="$(findsonglengths)"
 
 trap 'cleanup' ERR EXIT
 
@@ -253,5 +340,5 @@ which this script cannot detect!
 EOF
 fi
 
-export bitrate codec extension strip tmpwavs tmpintermediate hvsc wavs sample_rate extra_args_f extra_args_sidplayfp_f
-parallel --progress -0 -j"$jobs" sidtowav {} :::: "$unencodedlist"
+export bitrate codec extension strip tmpwavs tmpintermediate hvsc wavs sample_rate extra_args_f extra_args_sidplayfp_f songlengths extreme
+parallel --line-buffer --progress -0 -j"$jobs" sidtowav {} :::: "$unencodedlist"
